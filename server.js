@@ -278,4 +278,16 @@ app.post('/api/refresh-events', async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
   await refreshDaily();
-  res.json({ ok: true, date: dailyBrief?.date, bullets: dailyBrief?.brief?.split
+  res.json({ ok: true, date: dailyBrief?.date, bullets: dailyBrief?.brief?.split('\n').length || 0 });
+});
+
+// =============================================================================
+// 404
+// =============================================================================
+app.use((req, res) => res.status(404).json({ response: "that endpoint does not exist. like your trading discipline." }));
+
+app.listen(port, () => {
+  console.log(`[hate] api listening on port ${port}`);
+  console.log(`[hate] cors: ${allowedOrigin}`);
+});
+
