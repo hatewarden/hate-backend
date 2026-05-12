@@ -270,4 +270,31 @@ app.get('/api/health', (req, res) => {
 // /api/today — view the current daily brief (debugging)
 // =============================================================================
 app.get('/api/today', (req, res) => {
-  if (!dailyBrief) return res.status(404).
+  if (!dailyBrief) return res.status(404).json({ error: 'no brief loaded yet' });
+  res.json(dailyBrief);
+});
+
+// =============================================================================
+// /api/refresh-events — manually trigger news refresh (auth required)
+// =============================================================================
+app.post('/api/refresh-events', async (req, res) => {
+  if (!process.env.REFRESH_TOKEN) {
+    return res.status(503).json({ error: 'refresh disabled' });
+  }
+  const auth = req.headers['x-refresh-token'];
+  if (auth !== process.env.REFRESH_TOKEN) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  await refreshDaily();
+  res.json({ ok: true, date: dailyBrief?.date, bullets: dailyBrief?.brief?.split('\n').length || 0 });
+});
+
+// =============================================================================
+// 404
+// =============================================================================
+app.use((req, res) => res.status(404).json({ response: "that endpoint does not exist. like your trading discipline." }));
+
+app.listen(port, () => {
+  console.log(`[hate] api listening on port ${port}`);
+  console.log(`[hate] cors: ${allowedOrigin}`);
+});
