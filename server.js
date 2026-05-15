@@ -362,6 +362,74 @@ app.post('/api/refresh-events', async (req, res) => {
 });
 
 // =============================================================================
+// /api/subscribe — email capture for launch alert
+// =============================================================================
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath as _fileURLToPath } from 'node:url';
+const _dirname = path.dirname(_fileURLToPath(import.meta.url));
+const SUBSCRIBERS_FILE = path.join(_dirname, 'data', 'subscribers.json');
+
+// rate-limit by IP: 1 signup per minute, 5 per hour
+const _subAttempts = new Map();
+function checkSubRateLimit(ip) {
+  const now = Date.now();
+  const log = _subAttempts.get(ip) || [];
+  const recent = log.filter(t => now - t < 60 * 60 * 1000);
+  if (recent.filter(t => now - t < 60 * 1000).length >= 1) return false;
+  if (recent.length >= 5) return false;
+  recent.push(now);
+  _subAttempts.set(ip, recent);
+  return true;
+}
+
+function isValidEmail(s) {
+  if (typeof s !== 'string' || s.length < 4 || s.length > 320) return false;
+  // Reasonable RFC-ish check, not strict
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+async function readSubscribers() {
+  try { return JSON.parse(await fsp.readFile(SUBSCRIBERS_FILE, 'utf8')); }
+  catch { return { list: [], count: 0 }; }
+}
+async function writeSubscribers(data) {
+  await fsp.mkdir(path.dirname(SUBSCRIBERS_FILE), { recursive: true });
+  await fsp.writeFile(SUBSCRIBERS_FILE, JSON.stringify(data, null, 2));
+}
+
+app.post('/api/subscribe', async (req, res) => {
+  try {
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].trim();
+    if (!checkSubRateLimit(ip)) {
+      return res.status(429).json({ ok: false, error: 'too many attempts. try again later.' });
+    }
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ ok: false, error: 'that email looks wrong. try again.' });
+    }
+    const data = await readSubscribers();
+    if (!data.list.some(s => s.email === email)) {
+      data.list.push({ email, ts: new Date().toISOString(), ip: ip.slice(0, 20) });
+      data.count = data.list.length;
+      await writeSubscribers(data);
+    }
+    return res.json({ ok: true, count: data.count });
+  } catch (e) {
+    console.error('[subscribe]', e);
+    return res.status(500).json({ ok: false, error: 'something stuttered. try again in a moment.' });
+  }
+});
+
+// admin-only viewer
+app.get('/api/subscribers', async (req, res) => {
+  if (!process.env.ADMIN_TOKEN) return res.status(503).json({ error: 'admin disabled' });
+  if (req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) return res.status(401).json({ error: 'unauthorized' });
+  const data = await readSubscribers();
+  res.json({ count: data.count, subscribers: data.list });
+});
+
+// =============================================================================
 // 404
 // =============================================================================
 app.use((req, res) => res.status(404).json({ response: "that endpoint does not exist. like your trading discipline." }));
