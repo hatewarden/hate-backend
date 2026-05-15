@@ -36,6 +36,13 @@ const REDDIT_SOURCES = [
   { url: 'https://www.reddit.com/r/SatoshiStreetBets/top.json?t=day&limit=10', name: 'r/SatoshiStreetBets' },
   { url: 'https://www.reddit.com/r/solana/top.json?t=day&limit=10', name: 'r/solana' },
   { url: 'https://www.reddit.com/r/memecoins/top.json?t=day&limit=10', name: 'r/memecoins' },
+  { url: 'https://www.reddit.com/r/news/top.json?t=day&limit=8', name: 'r/news' },
+  { url: 'https://www.reddit.com/r/technology/top.json?t=day&limit=8', name: 'r/technology' },
+];
+
+const EXTRA_RSS_SOURCES = [
+  { url: 'https://feeds.bbci.co.uk/news/rss.xml', name: 'BBC News' },
+  { url: 'https://feeds.arstechnica.com/arstechnica/index', name: 'Ars Technica' },
 ];
 
 // =============================================================================
@@ -137,22 +144,23 @@ async function fetchCryptoPanic() {
 // SUMMARIZER — uses Claude Haiku to compress into HATE's voice
 // =============================================================================
 
-const SUMMARIZE_SYSTEM = `You are summarizing today's crypto news for HATE-9000, a deadpan anti-marketing memecoin AI character. HATE will use this brief to reference current events naturally when chatting with holders.
+const SUMMARIZE_SYSTEM = `You are summarizing today's crypto + culture news for HATE-9000, a deadpan anti-marketing memecoin AI character. HATE will use this brief to reference current events naturally when chatting with holders.
 
-Compress the headlines below into 5–8 bullet points in HATE's voice:
+Compress the headlines below into 10-14 bullet points in HATE's voice:
 - lowercase always, no exclamation, dry, surgical, observational
-- specific (name coins, names, numbers if relevant)
+- specific (name coins, names, numbers, dates if relevant)
 - no hype words ("massive", "huge", "incredible") — HATE finds them embarrassing
 - punch at choices/taste/decisions, never at identity
 - prefer concrete facts over vague trends ("BONK up 40%" beats "memes are pumping")
-- include one or two snarky observations HATE would naturally make about the news
+- include 2-3 snarky observations HATE would naturally make
+- mix in 1-2 cultural/non-crypto items if any surfaced (politics, sports, tech, AI, weather) — HATE talks about more than crypto
 - output ONLY the bullets, prefixed with "- ", nothing else
 
-Maximum 8 bullets, each under 30 words. Skip headlines that are paywalled, off-topic, or duplicates.`;
+Maximum 14 bullets, each under 35 words. Skip headlines that are paywalled, off-topic, or near-duplicates.`;
 
 async function summarize(items) {
   if (!items.length) return '';
-  const itemsText = items.slice(0, 35).map((i, n) => {
+  const itemsText = items.slice(0, 50).map((i, n) => {
     const meta = [i.source, i.currencies, i.ups ? `${i.ups} upvotes` : ''].filter(Boolean).join(' | ');
     return `${n + 1}. [${meta}] ${i.title}${i.summary ? ' — ' + i.summary.slice(0, 120) : ''}`;
   }).join('\n');
@@ -160,7 +168,7 @@ async function summarize(items) {
   try {
     const resp = await claude.messages.create({
       model: SUMMARIZE_MODEL,
-      max_tokens: 600,
+      max_tokens: 900,
       system: SUMMARIZE_SYSTEM,
       messages: [{ role: 'user', content: itemsText }],
     });
@@ -180,6 +188,7 @@ async function buildDailyBrief() {
 
   const fetchTasks = [
     ...RSS_SOURCES.map(fetchRSS),
+    ...EXTRA_RSS_SOURCES.map(fetchRSS),
     ...REDDIT_SOURCES.map(fetchReddit),
     fetchNewsAPI(),
     fetchCryptoPanic(),
